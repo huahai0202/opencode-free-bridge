@@ -48,6 +48,65 @@ dsh plugin --profile web add github:huahai0202/opencode-free-bridge
 
 ---
 
+## 🔌 ACP Profile / Paseo 接入
+
+`web` Profile 的安装命令**不会**覆盖 ACP 通道：`dsh --profile acp` 是独立的出厂模板 Profile，需要把插件挂到它的用户层（典型场景：通过 [Agent Client Protocol](https://agentclientprotocol.com/) 接入 Paseo 等外部客户端）。
+
+### 1. 挂载到 acp Profile
+
+1. 生成用户层目录（如不存在）：`dsh --profile acp --dump-config`，随后出现 `~/.dsh/profiles/acp/`；
+2. 编辑 `~/.dsh/profiles/acp/package.json`，把插件加入依赖与 bundles：
+
+   ```json
+   {
+     "dependencies": {
+       "opencode-free-bridge": "github:huahai0202/opencode-free-bridge"
+     },
+     "dsh": {
+       "profile": {
+         "bundles": [
+           "@deepseek-ai/dsh-base",
+           "@deepseek-ai/dsh-acp-app",
+           "opencode-free-bridge"
+         ],
+         "patchReload": "startup"
+       }
+     }
+   }
+   ```
+
+3. 安装依赖：`cd ~/.dsh/profiles/acp && dsh plugin --profile acp install`
+4. 验证层树出现插件：`dsh --profile acp --dump-config | grep opencode-free-bridge`
+
+### 2. 注册为 Paseo Provider
+
+在 `~/.paseo/config.json` 的 `agents.providers` 下添加（凭据全部由 DSH 自管，Paseo 不接触密钥）：
+
+```json
+"dsh": {
+  "extends": "acp",
+  "label": "DSH (DeepSeek Harness)",
+  "command": ["dsh", "--profile", "acp"],
+  "env": {}
+}
+```
+
+重启 Paseo 后**新建 agent**（每次 agent 会话都会重新 spawn `dsh`），模型选择器即出现 DSH 的全部分组（`deepseek-official` / `fastmodel` / `opencode` / `cline`）；其中 `opencode` 与 `cline` 分组经本插件注入协议头，免费模型可直接使用，无需 Key 兜底。
+
+### 3. ACP 验证脚本
+
+`tools/` 内置两个零依赖脚本（Node ≥ 22），用于在接入外部客户端前先本地验证链路：
+
+```bash
+node tools/acp-smoke.mjs     # initialize + session/new，打印模型目录与配置项
+node tools/acp-turn.mjs      # 完整一轮对话，默认走 OpenCode 免费模型，验证 MissingSessionID 400 已消失
+
+# 可选参数：--cwd <工作目录>  --model '["cline","deepseek/deepseek-v4-flash"]'  --prompt "..."
+# --profile <name> 可改为其他 ACP Profile
+```
+
+---
+
 ## 📄 开源许可
 
 [MIT](./LICENSE) © huahai0202
